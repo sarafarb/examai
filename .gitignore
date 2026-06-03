@@ -1,0 +1,10 @@
+# Node.js / Frontend dependencies
+node_modules/
+
+# .NET / C# Build outputs
+bin/
+obj/
+*.user
+
+# Environment variables & secrets
+.env

@@ -1,0 +1,1108 @@
+# ExamAI — Complete Production-Ready SaaS Platform Design
+### Principal Architecture Document · v1.0
+
+---
+
+## TABLE OF CONTENTS
+
+1. [System Architecture](#1-system-architecture)
+2. [C4 Diagrams](#2-c4-diagrams)
+3. [Domain-Driven Design](#3-domain-driven-design)
+4. [Database Schema & ERD](#4-database-schema--erd)
+5. [API Design](#5-api-design)
+6. [AI Pipeline Design](#6-ai-pipeline-design)
+7. [Security Architecture](#7-security-architecture)
+8. [Infrastructure & DevOps](#8-infrastructure--devops)
+
+---
+
+## 1. SYSTEM ARCHITECTURE
+
+### 1.1 Architecture Overview
+
+ExamAI is a cloud-native, microservices-oriented SaaS platform deployed on Kubernetes. It processes Hebrew handwritten exams through a multi-stage AI pipeline, provides real-time teacher review workflows, and scales elastically under load.
+
+**Core Architectural Principles:**
+- Bounded context isolation via Domain-Driven Design
+- Event-driven async communication via RabbitMQ
+- CQRS for read/write separation on high-traffic paths
+- Defense-in-depth for security (layered)
+- Eventual consistency for async OCR/grading pipelines
+- Hexagonal (Ports & Adapters) architecture per service
+
+### 1.2 Technology Stack
+
+| Layer | Technology | Version | Purpose |
+|-------|-----------|---------|---------|
+| Frontend | Angular | 18+ | SPA with lazy loading, SSR |
+| API Gateway | YARP + Nginx | Latest | Routing, TLS termination, rate limiting |
+| Backend | .NET | 9 | Web APIs, background workers |
+| ORM | EF Core | 9 | Database access, migrations |
+| Database | PostgreSQL | 16 | Primary OLTP data store |
+| Cache | Redis | 7.2 | Sessions, distributed cache, rate limiter |
+| Message Queue | RabbitMQ | 3.13 | Async job processing, event bus |
+| Object Storage | AWS S3 / MinIO | Latest | Files, PDFs, scanned exams |
+| Search | Elasticsearch | 8.x | Audit log search, full-text |
+| OCR Engine | Azure AI Document Intelligence | 2024-02 | Hebrew OCR, layout analysis |
+| Handwriting | Azure AI + Custom Model | — | Hebrew handwriting recognition |
+| LLM | OpenAI GPT-4o | Latest | AI grading engine |
+| Monitoring | OpenTelemetry + Grafana | Latest | Distributed tracing, metrics |
+| Logging | Serilog + Seq | Latest | Structured JSON logging |
+| Payment | Stripe | Latest | Billing, PCI compliance |
+| Email | SendGrid | Latest | Transactional emails |
+| Auth | JWT + Google OAuth 2.0 | — | Authentication |
+| CI/CD | GitHub Actions | — | Pipelines |
+| Containers | Docker | 26+ | Containerisation |
+| Orchestration | Kubernetes | 1.30+ | Deployment, autoscaling |
+| Service Mesh | Linkerd | Latest | mTLS, observability |
+| Secret Management | HashiCorp Vault | Latest | Secrets at rest |
+
+### 1.3 High-Level Logical Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        CLIENTS                                  │
+│   [Angular SPA]  [Mobile Browser]  [Admin Portal]              │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ HTTPS/WSS
+┌────────────────────────────▼────────────────────────────────────┐
+│               API GATEWAY LAYER (YARP + Nginx)                  │
+│   Rate Limiting · JWT Validation · TLS · CORS · WAF             │
+└──────┬──────────┬──────────┬──────────┬──────────┬─────────────┘
+       │          │          │          │          │
+  ┌────▼──┐  ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼────┐
+  │Identity│  │ Exam  │ │Grading│ │Billing│ │ Admin  │
+  │  API  │  │  API  │ │  API  │ │  API  │ │  API   │
+  └────┬──┘  └───┬───┘ └───┬───┘ └───┬───┘ └───┬────┘
+       │          │          │          │          │
+       └──────────┴──────────┴──────────┴──────────┘
+                             │
+              ┌──────────────▼─────────────────┐
+              │         MESSAGE BUS             │
+              │   RabbitMQ (Topic Exchange)     │
+              └──┬─────────────┬───────────────┘
+                 │             │
+          ┌──────▼──┐   ┌─────▼──────┐   ┌──────────────┐
+          │   OCR   │   │  Grading   │   │    Export    │
+          │ Worker  │   │  Worker    │   │   Worker     │
+          └──┬──────┘   └─────┬──────┘   └──────┬───────┘
+             │                │                  │
+     ┌───────▼─────────────────▼──────────────────▼──────────┐
+     │                  DATA TIER                              │
+     │  PostgreSQL  ·  Redis  ·  S3  ·  Elasticsearch        │
+     └─────────────────────────────────────────────────────────┘
+```
+
+### 1.4 Service Responsibilities
+
+| Service | Responsibility | Owns Tables |
+|---------|---------------|-------------|
+| Identity API | Auth, users, RBAC, tokens | identity.* |
+| Exam API | Exam CRUD, templates, rubrics | exam.* |
+| OCR Worker | File processing, OCR pipeline | ocr.* |
+| Grading Worker | LLM grading, scoring | grading.* |
+| Billing API | Plans, Stripe, invoices, usage | billing.* |
+| Export Worker | PDF generation, annotations | export.* |
+| Analytics API | Aggregate statistics, dashboard | analytics.* |
+| Admin API | Admin operations, config | admin.* |
+| Notification Worker | Email dispatch | notification.* |
+
+---
+
+## 2. C4 DIAGRAMS
+
+### 2.1 Level 1 — System Context Diagram
+
+```
+                        ┌───────────────────────────────────┐
+                        │           ExamAI System            │
+                        │                                   │
+                        │  Hebrew exam grading SaaS         │
+                        │  powered by AI and OCR            │
+                        └───────────────────────────────────┘
+                           ▲         ▲         ▲        ▲
+          ┌────────────────┘         │         │        └───────────────┐
+          │                          │         │                        │
+   ┌──────┴──────┐            ┌──────┴──┐  ┌──┴──────┐        ┌────────┴──────┐
+   │   Teacher   │            │  Admin  │  │ Student │        │   External    │
+   │             │            │         │  │(indirect│        │   Systems     │
+   │ Registers,  │            │ Manages │  │via PDF) │        │               │
+   │ uploads     │            │ users,  │  └─────────┘        │ Google OAuth  │
+   │ exams,      │            │ billing,│                     │ Stripe        │
+   │ reviews AI  │            │ config  │                     │ SendGrid      │
+   │ grades      │            └─────────┘                     │ Azure AI DI   │
+   └─────────────┘                                            │ OpenAI GPT-4o │
+                                                              └───────────────┘
+```
+
+### 2.2 Level 2 — Container Diagram
+
+```mermaid
+C4Container
+    title ExamAI Container Diagram
+
+    Person(teacher, "Teacher", "Uploads exams, reviews grades")
+    Person(admin, "Admin", "Manages platform")
+
+    System_Boundary(examai, "ExamAI Platform") {
+
+        Container(spa, "Angular SPA", "Angular 18", "Teacher and admin web interface")
+        Container(gateway, "API Gateway", "YARP + Nginx", "Request routing, rate limiting, TLS")
+
+        Container(identity_api, "Identity API", ".NET 9", "Auth, users, RBAC")
+        Container(exam_api, "Exam API", ".NET 9", "Exam management, rubrics, student uploads")
+        Container(grading_api, "Grading API", ".NET 9", "Grade retrieval, overrides, approvals")
+        Container(billing_api, "Billing API", ".NET 9", "Plans, Stripe, invoices")
+        Container(analytics_api, "Analytics API", ".NET 9", "Class stats, dashboard data")
+        Container(admin_api, "Admin API", ".NET 9", "Admin operations")
+
+        Container(ocr_worker, "OCR Worker", ".NET 9 Worker", "Azure AI DI, preprocessing, extraction")
+        Container(grading_worker, "Grading Worker", ".NET 9 Worker", "GPT-4o grading pipeline")
+        Container(export_worker, "Export Worker", ".NET 9 Worker", "PDF annotation and generation")
+        Container(notification_worker, "Notification Worker", ".NET 9 Worker", "Email dispatch")
+
+        ContainerDb(postgres, "PostgreSQL 16", "Database", "Primary data store")
+        ContainerDb(redis, "Redis 7", "Cache", "Sessions, rate limits, distributed lock")
+        ContainerDb(rabbit, "RabbitMQ", "Message Broker", "Async job queues")
+        ContainerDb(s3, "S3 / MinIO", "Object Storage", "Files, PDFs, OCR outputs")
+        ContainerDb(elastic, "Elasticsearch 8", "Search", "Audit logs, analytics")
+    }
+
+    System_Ext(google, "Google OAuth 2.0")
+    System_Ext(stripe, "Stripe")
+    System_Ext(sendgrid, "SendGrid")
+    System_Ext(azure_ai, "Azure AI Document Intelligence")
+    System_Ext(openai, "OpenAI GPT-4o")
+```
+
+### 2.3 Level 3 — Component Diagram: Exam API
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                            EXAM API                                   │
+│                                                                       │
+│  ┌─────────────────────────────────────────────────────────────────┐ │
+│  │                     Application Layer                           │ │
+│  │                                                                 │ │
+│  │  ExamController   RubricController   StudentExamController      │ │
+│  │       │                 │                    │                  │ │
+│  │  ExamAppService   RubricAppService   StudentExamAppService      │ │
+│  └──────────────────────────────────────────────────────────────── ┘ │
+│                     │            │            │                       │
+│  ┌──────────────────▼────────────▼────────────▼────────────────────┐ │
+│  │                      Domain Layer                                │ │
+│  │                                                                  │ │
+│  │   Exam (AR)    Question (Entity)    Rubric (AR)                  │ │
+│  │   ExamPolicy   StrictnessPolicy     RubricBuilder                │ │
+│  │   ExamEvents   DomainEventDispatcher                             │ │
+│  └──────────────────────────────────────────────────────────────── ┘ │
+│                     │            │            │                       │
+│  ┌──────────────────▼────────────▼────────────▼────────────────────┐ │
+│  │                   Infrastructure Layer                           │ │
+│  │                                                                  │ │
+│  │   ExamRepository   FileStorageService   MessagePublisher         │ │
+│  │       │                  │                    │                  │ │
+│  │  PostgreSQL (EF)       S3 SDK             RabbitMQ SDK           │ │
+│  └──────────────────────────────────────────────────────────────── ┘ │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### 2.4 Level 3 — Component Diagram: OCR Worker
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                          OCR WORKER                                   │
+│                                                                       │
+│  [RabbitMQ Consumer: ocr.jobs.queue]                                  │
+│       │                                                               │
+│       ▼                                                               │
+│  OcrJobProcessor                                                      │
+│       │                                                               │
+│  ┌────▼───────────────────────────────────────────────────────────┐  │
+│  │                    OCR Pipeline                                 │  │
+│  │                                                                 │  │
+│  │  1. FileDownloader (S3)                                         │  │
+│  │  2. VirusScanService (ClamAV)                                   │  │
+│  │  3. ImagePreprocessor                                           │  │
+│  │     - Deskew (OpenCV / Tesseract)                               │  │
+│  │     - Denoise (bilateral filter)                                │  │
+│  │     - Orientation correction (ML model)                        │  │
+│  │  4. AzureDocumentIntelligenceClient                             │  │
+│  │     - Layout model for printed Hebrew                           │  │
+│  │     - Custom model for handwriting                              │  │
+│  │  5. AnswerExtractor                                             │  │
+│  │     - Question region mapping                                   │  │
+│  │     - Bounding box extraction                                   │  │
+│  │  6. ConfidenceEvaluator                                         │  │
+│  │     - Per-page confidence                                       │  │
+│  │     - Low confidence → human review flag                        │  │
+│  │  7. OcrResultPersistence (PostgreSQL)                           │  │
+│  │  8. GradingJobPublisher (RabbitMQ → grading.jobs.queue)         │  │
+│  └─────────────────────────────────────────────────────────────── ┘  │
+│                                                                       │
+│  Fallback: Azure AI DI timeout → retry × 3 → mark for manual review  │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### 2.5 Level 3 — Component Diagram: Grading Worker
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                        GRADING WORKER                                 │
+│                                                                       │
+│  [RabbitMQ Consumer: grading.jobs.queue]                              │
+│       │                                                               │
+│       ▼                                                               │
+│  GradingJobProcessor                                                  │
+│       │                                                               │
+│  ┌────▼───────────────────────────────────────────────────────────┐  │
+│  │                   Grading Pipeline                              │  │
+│  │                                                                 │  │
+│  │  1. ContextBuilder                                              │  │
+│  │     - Load rubric + strictness                                  │  │
+│  │     - Load extracted student answers                            │  │
+│  │                                                                 │  │
+│  │  2. PromptBuilder                                               │  │
+│  │     - Inject rubric, strictness, student answer                 │  │
+│  │     - Load prompt template from DB (admin-configurable)         │  │
+│  │                                                                 │  │
+│  │  3. OpenAI GPT-4o Client                                        │  │
+│  │     - Structured output (JSON mode)                             │  │
+│  │     - Per-question grading call                                 │  │
+│  │     - Response: {isCorrect, score, deduction, explanation}      │  │
+│  │                                                                 │  │
+│  │  4. ConfidenceEvaluator                                         │  │
+│  │     - Score < 0.75 → queue for teacher review                   │  │
+│  │                                                                 │  │
+│  │  5. AnnotationBuilder                                           │  │
+│  │     - Map grades to bounding boxes                              │  │
+│  │     - Generate ✓ / −X overlays                                  │  │
+│  │                                                                 │  │
+│  │  6. GradeResultPersistence (PostgreSQL)                         │  │
+│  │  7. NotificationPublisher → teacher email                       │  │
+│  └─────────────────────────────────────────────────────────────── ┘  │
+│                                                                       │
+│  Fallback: OpenAI timeout → retry × 3 → fallback GPT-4-turbo         │
+│  Fallback: Both fail → mark GRADING_FAILED, notify teacher            │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. DOMAIN-DRIVEN DESIGN
+
+### 3.1 Bounded Contexts Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         ExamAI Domain                               │
+│                                                                     │
+│  ┌───────────────┐    ┌───────────────┐    ┌───────────────────┐   │
+│  │   Identity    │    │    Billing    │    │  Exam Management  │   │
+│  │               │◄──►│               │    │                   │   │
+│  │ Users, Auth,  │    │ Plans, Stripe,│    │ Exams, Questions, │   │
+│  │ RBAC, Tokens  │    │ Invoices      │    │ Rubrics           │   │
+│  └───────┬───────┘    └──────┬────────┘    └────────┬──────────┘   │
+│          │                   │                      │               │
+│          │       ┌───────────▼──────────────────────▼──────┐        │
+│          │       │           OCR Processing                 │        │
+│          │       │   File Ingestion, Preprocessing,         │        │
+│          │       │   Azure AI DI, Answer Extraction         │        │
+│          │       └──────────────────────┬───────────────────┘        │
+│          │                              │                            │
+│          │       ┌──────────────────────▼───────────────────┐        │
+│          │       │           AI Grading                     │        │
+│          │       │   LLM Engine, Scoring, Annotations        │        │
+│          │       └──────────────────────┬───────────────────┘        │
+│          │                              │                            │
+│          │       ┌──────────────────────▼───────────────────┐        │
+│          │       │          Teacher Review                  │        │
+│          │       │   Override, Approve, Audit Trail          │        │
+│          │       └──────────┬───────────────────────────────┘        │
+│          │                  │                                        │
+│  ┌───────▼──────────────────▼──────┐   ┌──────────────────────┐    │
+│  │         Export                  │   │      Analytics        │    │
+│  │  PDF Generation, Annotations    │   │  Stats, Charts, AI    │    │
+│  │                                 │   │  Recommendations      │    │
+│  └─────────────────────────────────┘   └──────────────────────┘    │
+│                                                                     │
+│  ┌───────────────┐    ┌───────────────┐                             │
+│  │ Notification  │    │ Administration│                             │
+│  │ Email, Events │    │ Admin Panel   │                             │
+│  └───────────────┘    └───────────────┘                             │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.2 Context Map
+
+| Relationship | Context A | Context B | Type |
+|---|---|---|---|
+| Identity provides user identity | Identity | Billing | Partnership (ACL) |
+| Identity provides user identity | Identity | Exam | Partnership (ACL) |
+| Exam provides rubric data | Exam | OCR | Upstream/Downstream |
+| OCR provides extracted answers | OCR | Grading | Upstream/Downstream |
+| Grading provides grade data | Grading | Review | Upstream/Downstream |
+| Review provides approved grades | Review | Export | Upstream/Downstream |
+| Grading data feeds analytics | Grading | Analytics | Published Language |
+| Exam data feeds analytics | Exam | Analytics | Published Language |
+| Identity triggers notifications | Identity | Notification | Conformist |
+| Billing triggers notifications | Billing | Notification | Conformist |
+| All contexts write audit logs | All | Administration | Conformist |
+
+### 3.3 Aggregate Designs
+
+#### Identity Context
+
+```
+AGGREGATE: User
+────────────────────────────────────
+Root:     User
+  id:               UserId (UUID)
+  email:            Email (VO)
+  passwordHash:     PasswordHash (VO)
+  googleId:         string?
+  name:             PersonName (VO)
+  emailVerified:    bool
+  status:           UserStatus {Active, Suspended, Deleted}
+  createdAt:        DateTimeOffset
+  updatedAt:        DateTimeOffset
+
+  Behaviours:
+  - Register(email, password) → raises UserRegisteredEvent
+  - VerifyEmail(token) → raises EmailVerifiedEvent
+  - RequestPasswordReset() → raises PasswordResetRequestedEvent
+  - Suspend(reason) → raises UserSuspendedEvent
+
+ENTITY: Session
+  id:               SessionId
+  userId:           UserId
+  refreshTokenHash: string
+  ipAddress:        string
+  userAgent:        string
+  expiresAt:        DateTimeOffset
+
+VALUE OBJECTS:
+  Email:        validated RFC-5321 string
+  PasswordHash: BCrypt hash, min cost 12
+  PersonName:   firstName (max 100) + lastName (max 100)
+  Token:        opaque random 256-bit + expiry
+
+DOMAIN EVENTS:
+  UserRegisteredEvent        {userId, email, timestamp}
+  EmailVerifiedEvent         {userId, timestamp}
+  PasswordResetRequestedEvent {userId, email, tokenHash, timestamp}
+  UserSuspendedEvent         {userId, reason, suspendedBy, timestamp}
+```
+
+#### Exam Context
+
+```
+AGGREGATE: Exam
+────────────────────────────────────
+Root:     Exam
+  id:               ExamId (UUID)
+  teacherId:        UserId
+  title:            string (max 200)
+  subject:          string (max 100)
+  gradeLevel:       string (max 50)
+  strictness:       Strictness (VO, 0-100)
+  maxScore:         decimal
+  status:           ExamStatus {Draft, Active, Grading, Completed, Archived}
+  template:         ExamTemplate?
+  answerKey:        AnswerKey?
+  questions:        List<Question>
+  createdAt:        DateTimeOffset
+
+ENTITY: Question
+  id:               QuestionId
+  examId:           ExamId
+  number:           int
+  text:             string
+  maxPoints:        decimal
+  orderIndex:       int
+  rubricItems:      List<RubricItem> (VO)
+
+ENTITY: ExamTemplate
+  id:               ExamTemplateId
+  examId:           ExamId
+  fileKey:          S3Key (VO)
+  fileName:         string
+  pageCount:        int
+  uploadedAt:       DateTimeOffset
+
+ENTITY: AnswerKey
+  id:               AnswerKeyId
+  examId:           ExamId
+  fileKey:          S3Key (VO)
+  processedAt:      DateTimeOffset?
+
+VALUE OBJECTS:
+  Strictness:   int 0-100 (0=semantic, 100=exact wording)
+  RubricItem:   { correctAnswer, alternativeAnswers[], gradingNotes, points }
+  S3Key:        validated S3 object key string
+
+DOMAIN EVENTS:
+  ExamCreatedEvent       {examId, teacherId}
+  TemplateUploadedEvent  {examId, fileKey}
+  AnswerKeyUploadedEvent {examId, fileKey}
+  RubricBuiltEvent       {examId, questionCount}
+  RubricEditedEvent      {examId, questionId, editedBy}
+  StrictnessChangedEvent {examId, oldValue, newValue}
+```
+
+#### OCR Context
+
+```
+AGGREGATE: StudentExam
+────────────────────────────────────
+Root:     StudentExam
+  id:               StudentExamId (UUID)
+  examId:           ExamId
+  teacherId:        UserId
+  studentName:      string
+  studentExternalId: string?
+  fileKeys:         List<S3Key>
+  pageCount:        int
+  status:           StudentExamStatus
+                    {Uploaded, Processing, OCRComplete,
+                     LowConfidence, Failed, Grading, Graded}
+  uploadedAt:       DateTimeOffset
+
+AGGREGATE: OcrJob
+  id:               OcrJobId
+  studentExamId:    StudentExamId
+  status:           OcrJobStatus {Queued, Processing, Completed, Failed}
+  startedAt:        DateTimeOffset?
+  completedAt:      DateTimeOffset?
+  errorMessage:     string?
+  pages:            List<OcrPage>
+
+ENTITY: OcrPage
+  id:               OcrPageId
+  jobId:            OcrJobId
+  pageNumber:       int
+  rawText:          string
+  confidenceScore:  Confidence (VO)
+  deskewApplied:    bool
+  orientationFixed: bool
+
+ENTITY: ExtractedAnswer
+  id:               ExtractedAnswerId
+  studentExamId:    StudentExamId
+  questionId:       QuestionId
+  rawText:          string
+  confidenceScore:  Confidence
+  boundingBox:      BoundingBox (VO)
+  pageNumber:       int
+
+VALUE OBJECTS:
+  Confidence:   float 0.0–1.0
+  BoundingBox:  { x, y, width, height, pageNumber }
+
+DOMAIN EVENTS:
+  OcrJobQueuedEvent       {jobId, studentExamId}
+  OcrJobStartedEvent      {jobId}
+  OcrJobCompletedEvent    {jobId, pageCount, avgConfidence}
+  OcrJobFailedEvent       {jobId, errorMessage}
+  LowConfidenceDetectedEvent {jobId, pageNumber, confidence}
+```
+
+#### Grading Context
+
+```
+AGGREGATE: GradingRun
+────────────────────────────────────
+  id:               GradingRunId
+  examId:           ExamId
+  initiatedBy:      UserId
+  status:           GradingRunStatus {Queued, InProgress, Completed, Failed}
+  modelVersion:     string
+  startedAt:        DateTimeOffset?
+  completedAt:      DateTimeOffset?
+
+AGGREGATE: StudentGrade
+  id:               StudentGradeId
+  studentExamId:    StudentExamId
+  gradingRunId:     GradingRunId
+  totalScore:       Score (VO)
+  maxScore:         Score (VO)
+  percentage:       decimal
+  status:           GradeStatus {Pending, AIGraded, UnderReview, Approved}
+  questionGrades:   List<QuestionGrade>
+  teacherComments:  List<TeacherComment>
+
+ENTITY: QuestionGrade
+  id:               QuestionGradeId
+  studentGradeId:   StudentGradeId
+  questionId:       QuestionId
+  extractedAnswerId: ExtractedAnswerId
+  isCorrect:        bool
+  score:            Score
+  maxScore:         Score
+  deduction:        Score
+  explanation:      string (Hebrew/English)
+  aiConfidence:     Confidence
+  aiModelVersion:   string
+  annotation:       GradingAnnotation (VO)
+  override:         TeacherOverride? (VO)
+
+VALUE OBJECTS:
+  Score:      decimal (min 0)
+  GradingAnnotation: { boundingBox, symbol, label, color }
+  TeacherOverride: { originalScore, newScore, comment, overriddenBy, overriddenAt }
+
+DOMAIN EVENTS:
+  GradingStartedEvent      {gradingRunId, examId}
+  QuestionGradedEvent      {questionGradeId, isCorrect, score}
+  GradingCompletedEvent    {studentGradeId, totalScore, percentage}
+  GradeOverriddenEvent     {questionGradeId, teacherId, oldScore, newScore}
+  GradeApprovedEvent       {studentGradeId, approvedBy}
+```
+
+---
+
+## 4. DATABASE SCHEMA & ERD
+
+### 4.1 Database Schema Design
+
+The database uses PostgreSQL 16 with schema-level isolation per bounded context. All IDs are UUID v7 (time-ordered). All timestamps are `TIMESTAMPTZ`. Soft-delete via `deleted_at` column.
+
+### 4.2 Schema: identity
+
+```sql
+-- ─────────────────────────────────────────
+-- SCHEMA: identity
+-- ─────────────────────────────────────────
+
+CREATE SCHEMA identity;
+
+CREATE TABLE identity.users (
+    id              UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    email           VARCHAR(320)    NOT NULL UNIQUE,
+    password_hash   VARCHAR(72),                       -- BCrypt, NULL for OAuth-only
+    google_id       VARCHAR(255)    UNIQUE,
+    first_name      VARCHAR(100)    NOT NULL,
+    last_name       VARCHAR(100)    NOT NULL,
+    email_verified  BOOLEAN         NOT NULL DEFAULT FALSE,
+    status          VARCHAR(20)     NOT NULL DEFAULT 'active'
+                                    CHECK (status IN ('active','suspended','deleted')),
+    avatar_url      VARCHAR(2048),
+    created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    deleted_at      TIMESTAMPTZ
+);
+
+CREATE INDEX idx_users_email ON identity.users(email) WHERE deleted_at IS NULL;
+CREATE INDEX idx_users_google_id ON identity.users(google_id) WHERE google_id IS NOT NULL;
+
+CREATE TABLE identity.sessions (
+    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             UUID        NOT NULL REFERENCES identity.users(id) ON DELETE CASCADE,
+    refresh_token_hash  VARCHAR(64) NOT NULL UNIQUE,   -- SHA-256 of refresh token
+    ip_address          INET        NOT NULL,
+    user_agent          TEXT,
+    expires_at          TIMESTAMPTZ NOT NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    revoked_at          TIMESTAMPTZ
+);
+
+CREATE INDEX idx_sessions_user_id ON identity.sessions(user_id);
+CREATE INDEX idx_sessions_expires_at ON identity.sessions(expires_at);
+
+CREATE TABLE identity.email_verifications (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID        NOT NULL REFERENCES identity.users(id) ON DELETE CASCADE,
+    token_hash  VARCHAR(64) NOT NULL UNIQUE,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    used_at     TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE identity.password_resets (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID        NOT NULL REFERENCES identity.users(id) ON DELETE CASCADE,
+    token_hash  VARCHAR(64) NOT NULL UNIQUE,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    used_at     TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE identity.roles (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        VARCHAR(50) NOT NULL UNIQUE,
+    description TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Seed: teacher, admin, super_admin
+INSERT INTO identity.roles (name, description) VALUES
+  ('teacher', 'Platform end user'),
+  ('admin', 'Platform administrator'),
+  ('super_admin', 'Full platform access');
+
+CREATE TABLE identity.user_roles (
+    user_id     UUID NOT NULL REFERENCES identity.users(id) ON DELETE CASCADE,
+    role_id     UUID NOT NULL REFERENCES identity.roles(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, role_id)
+);
+
+CREATE TABLE identity.permissions (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        VARCHAR(100) NOT NULL UNIQUE,
+    resource    VARCHAR(50) NOT NULL,
+    action      VARCHAR(50) NOT NULL,
+    UNIQUE (resource, action)
+);
+
+CREATE TABLE identity.role_permissions (
+    role_id         UUID NOT NULL REFERENCES identity.roles(id) ON DELETE CASCADE,
+    permission_id   UUID NOT NULL REFERENCES identity.permissions(id) ON DELETE CASCADE,
+    PRIMARY KEY (role_id, permission_id)
+);
+```
+
+### 4.3 Schema: billing
+
+```sql
+-- ─────────────────────────────────────────
+-- SCHEMA: billing
+-- ─────────────────────────────────────────
+
+CREATE SCHEMA billing;
+
+CREATE TABLE billing.plans (
+    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    name                VARCHAR(50) NOT NULL UNIQUE,
+    max_free_pages      INT         NOT NULL DEFAULT 0,
+    price_per_page_ils  NUMERIC(10,4) NOT NULL DEFAULT 0,
+    features            JSONB       NOT NULL DEFAULT '{}',
+    is_active           BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Seed plans
+INSERT INTO billing.plans (name, max_free_pages, price_per_page_ils, features) VALUES
+  ('free', 25, 0, '{"export": true, "analytics": "basic"}'),
+  ('pay_as_you_go', 0, 0.20, '{"export": true, "analytics": "full", "batch_export": true}');
+
+CREATE TABLE billing.subscriptions (
+    id                      UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id                 UUID        NOT NULL REFERENCES identity.users(id),
+    plan_id                 UUID        NOT NULL REFERENCES billing.plans(id),
+    stripe_customer_id      VARCHAR(100),
+    stripe_subscription_id  VARCHAR(100),
+    status                  VARCHAR(20) NOT NULL DEFAULT 'active'
+                                        CHECK (status IN ('active','paused','cancelled')),
+    current_period_start    TIMESTAMPTZ,
+    current_period_end      TIMESTAMPTZ,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_subscriptions_user_id ON billing.subscriptions(user_id);
+CREATE INDEX idx_subscriptions_stripe_customer ON billing.subscriptions(stripe_customer_id);
+
+CREATE TABLE billing.payment_methods (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID        NOT NULL REFERENCES identity.users(id),
+    stripe_pm_id    VARCHAR(100) NOT NULL UNIQUE,
+    brand           VARCHAR(20),           -- visa, mastercard, amex
+    last4           CHAR(4),
+    exp_month       SMALLINT,
+    exp_year        SMALLINT,
+    is_default      BOOLEAN     NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at      TIMESTAMPTZ
+);
+
+CREATE INDEX idx_payment_methods_user_id ON billing.payment_methods(user_id);
+
+CREATE TABLE billing.invoices (
+    id                  UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             UUID            NOT NULL REFERENCES identity.users(id),
+    stripe_invoice_id   VARCHAR(100)    UNIQUE,
+    amount_ils          NUMERIC(10,2)   NOT NULL,
+    pages_billed        INT             NOT NULL,
+    status              VARCHAR(20)     NOT NULL CHECK (status IN ('draft','open','paid','void')),
+    pdf_url             VARCHAR(2048),
+    created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    paid_at             TIMESTAMPTZ
+);
+
+CREATE INDEX idx_invoices_user_id ON billing.invoices(user_id);
+
+CREATE TABLE billing.usage_records (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID        NOT NULL REFERENCES identity.users(id),
+    exam_id         UUID,
+    student_exam_id UUID,
+    pages_consumed  INT         NOT NULL,
+    occurred_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_usage_records_user_id ON billing.usage_records(user_id);
+CREATE INDEX idx_usage_records_occurred_at ON billing.usage_records(occurred_at);
+```
+
+### 4.4 Schema: exam
+
+```sql
+-- ─────────────────────────────────────────
+-- SCHEMA: exam
+-- ─────────────────────────────────────────
+
+CREATE SCHEMA exam;
+
+CREATE TABLE exam.exams (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    teacher_id      UUID        NOT NULL REFERENCES identity.users(id),
+    title           VARCHAR(200) NOT NULL,
+    subject         VARCHAR(100),
+    grade_level     VARCHAR(50),
+    max_score       NUMERIC(6,2) NOT NULL DEFAULT 100,
+    strictness      SMALLINT    NOT NULL DEFAULT 50
+                                CHECK (strictness BETWEEN 0 AND 100),
+    status          VARCHAR(20) NOT NULL DEFAULT 'draft'
+                                CHECK (status IN ('draft','active','grading','completed','archived')),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at      TIMESTAMPTZ
+);
+
+CREATE INDEX idx_exams_teacher_id ON exam.exams(teacher_id) WHERE deleted_at IS NULL;
+
+CREATE TABLE exam.exam_templates (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    exam_id     UUID        NOT NULL REFERENCES exam.exams(id) ON DELETE CASCADE,
+    file_key    VARCHAR(1024) NOT NULL,
+    file_name   VARCHAR(255) NOT NULL,
+    file_size   BIGINT,
+    page_count  INT,
+    mime_type   VARCHAR(100),
+    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE exam.answer_keys (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    exam_id         UUID        NOT NULL REFERENCES exam.exams(id) ON DELETE CASCADE,
+    file_key        VARCHAR(1024) NOT NULL,
+    file_name       VARCHAR(255) NOT NULL,
+    processed_at    TIMESTAMPTZ
+);
+
+CREATE TABLE exam.questions (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    exam_id         UUID        NOT NULL REFERENCES exam.exams(id) ON DELETE CASCADE,
+    question_number INT         NOT NULL,
+    question_text   TEXT        NOT NULL,
+    max_points      NUMERIC(5,2) NOT NULL,
+    order_index     INT         NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (exam_id, question_number)
+);
+
+CREATE INDEX idx_questions_exam_id ON exam.questions(exam_id);
+
+CREATE TABLE exam.rubric_items (
+    id                      UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    question_id             UUID        NOT NULL REFERENCES exam.questions(id) ON DELETE CASCADE,
+    correct_answer          TEXT        NOT NULL,
+    alternative_answers     TEXT[]      NOT NULL DEFAULT '{}',
+    grading_notes           TEXT,
+    points                  NUMERIC(5,2) NOT NULL,
+    order_index             INT         NOT NULL DEFAULT 0,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_rubric_items_question_id ON exam.rubric_items(question_id);
+```
+
+### 4.5 Schema: ocr
+
+```sql
+-- ─────────────────────────────────────────
+-- SCHEMA: ocr
+-- ─────────────────────────────────────────
+
+CREATE SCHEMA ocr;
+
+CREATE TABLE ocr.student_exams (
+    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    exam_id             UUID        NOT NULL REFERENCES exam.exams(id),
+    teacher_id          UUID        NOT NULL REFERENCES identity.users(id),
+    student_name        VARCHAR(200) NOT NULL,
+    student_external_id VARCHAR(100),
+    file_keys           TEXT[]      NOT NULL DEFAULT '{}',  -- S3 keys
+    page_count          INT         NOT NULL DEFAULT 0,
+    status              VARCHAR(30) NOT NULL DEFAULT 'uploaded'
+                                    CHECK (status IN (
+                                        'uploaded','processing','ocr_complete',
+                                        'low_confidence','ocr_failed',
+                                        'grading','graded','approved')),
+    uploaded_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at          TIMESTAMPTZ
+);
+
+CREATE INDEX idx_student_exams_exam_id ON ocr.student_exams(exam_id);
+CREATE INDEX idx_student_exams_teacher_id ON ocr.student_exams(teacher_id);
+CREATE INDEX idx_student_exams_status ON ocr.student_exams(status);
+
+CREATE TABLE ocr.ocr_jobs (
+    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_exam_id     UUID        NOT NULL REFERENCES ocr.student_exams(id),
+    status              VARCHAR(20) NOT NULL DEFAULT 'queued'
+                                    CHECK (status IN ('queued','processing','completed','failed')),
+    azure_operation_id  VARCHAR(255),
+    retry_count         SMALLINT    NOT NULL DEFAULT 0,
+    error_message       TEXT,
+    started_at          TIMESTAMPTZ,
+    completed_at        TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE ocr.ocr_pages (
+    id                      UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id                  UUID        NOT NULL REFERENCES ocr.ocr_jobs(id) ON DELETE CASCADE,
+    page_number             INT         NOT NULL,
+    raw_text                TEXT,
+    processed_text          TEXT,       -- After cleanup
+    confidence_score        NUMERIC(5,4) NOT NULL DEFAULT 0,
+    deskew_applied          BOOLEAN     NOT NULL DEFAULT FALSE,
+    orientation_correction  SMALLINT    DEFAULT 0,  -- degrees
+    noise_removed           BOOLEAN     NOT NULL DEFAULT FALSE,
+    layout_json             JSONB,      -- Azure DI layout response
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE ocr.extracted_answers (
+    id                  UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_exam_id     UUID            NOT NULL REFERENCES ocr.student_exams(id),
+    question_id         UUID            NOT NULL REFERENCES exam.questions(id),
+    raw_text            TEXT,
+    cleaned_text        TEXT,
+    confidence_score    NUMERIC(5,4)    NOT NULL DEFAULT 0,
+    bounding_box        JSONB,          -- { x, y, width, height, pageNumber }
+    page_number         INT,
+    needs_review        BOOLEAN         NOT NULL DEFAULT FALSE,
+    created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_extracted_answers_student_exam ON ocr.extracted_answers(student_exam_id);
+CREATE INDEX idx_extracted_answers_question ON ocr.extracted_answers(question_id);
+```
+
+### 4.6 Schema: grading
+
+```sql
+-- ─────────────────────────────────────────
+-- SCHEMA: grading
+-- ─────────────────────────────────────────
+
+CREATE SCHEMA grading;
+
+CREATE TABLE grading.grading_runs (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    exam_id         UUID        NOT NULL REFERENCES exam.exams(id),
+    initiated_by    UUID        NOT NULL REFERENCES identity.users(id),
+    status          VARCHAR(20) NOT NULL DEFAULT 'queued'
+                                CHECK (status IN ('queued','in_progress','completed','failed')),
+    model_version   VARCHAR(100),
+    prompt_version  VARCHAR(50),
+    started_at      TIMESTAMPTZ,
+    completed_at    TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE grading.student_grades (
+    id                  UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_exam_id     UUID            NOT NULL REFERENCES ocr.student_exams(id),
+    grading_run_id      UUID            NOT NULL REFERENCES grading.grading_runs(id),
+    total_score         NUMERIC(6,2)    NOT NULL DEFAULT 0,
+    max_score           NUMERIC(6,2)    NOT NULL,
+    percentage          NUMERIC(5,2)    NOT NULL DEFAULT 0,
+    status              VARCHAR(20)     NOT NULL DEFAULT 'ai_graded'
+                                        CHECK (status IN
+                                            ('ai_graded','under_review','approved')),
+    reviewed_by         UUID            REFERENCES identity.users(id),
+    approved_at         TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_student_grades_student_exam ON grading.student_grades(student_exam_id);
+CREATE INDEX idx_student_grades_run ON grading.student_grades(grading_run_id);
+
+CREATE TABLE grading.question_grades (
+    id                      UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_grade_id        UUID            NOT NULL REFERENCES grading.student_grades(id),
+    question_id             UUID            NOT NULL REFERENCES exam.questions(id),
+    extracted_answer_id     UUID            REFERENCES ocr.extracted_answers(id),
+    is_correct              BOOLEAN         NOT NULL,
+    score                   NUMERIC(5,2)    NOT NULL DEFAULT 0,
+    max_score               NUMERIC(5,2)    NOT NULL,
+    deduction               NUMERIC(5,2)    NOT NULL DEFAULT 0,
+    explanation             TEXT,
+    ai_confidence           NUMERIC(5,4)    NOT NULL DEFAULT 0,
+    ai_model_version        VARCHAR(100),
+    annotation_json         JSONB,          -- { symbol, label, boundingBox, color }
+    needs_review            BOOLEAN         NOT NULL DEFAULT FALSE,
+    created_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_question_grades_student_grade ON grading.question_grades(student_grade_id);
+CREATE INDEX idx_question_grades_question ON grading.question_grades(question_id);
+
+CREATE TABLE grading.teacher_overrides (
+    id                  UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    question_grade_id   UUID            NOT NULL REFERENCES grading.question_grades(id),
+    teacher_id          UUID            NOT NULL REFERENCES identity.users(id),
+    original_score      NUMERIC(5,2)    NOT NULL,
+    new_score           NUMERIC(5,2)    NOT NULL,
+    original_is_correct BOOLEAN         NOT NULL,
+    new_is_correct      BOOLEAN         NOT NULL,
+    comment             TEXT,
+    created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE grading.teacher_comments (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_grade_id UUID       NOT NULL REFERENCES grading.student_grades(id),
+    teacher_id      UUID        NOT NULL REFERENCES identity.users(id),
+    comment         TEXT        NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+### 4.7 Schema: export
+
+```sql
+CREATE SCHEMA export;
+
+CREATE TABLE export.export_jobs (
+    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_grade_id    UUID        NOT NULL REFERENCES grading.student_grades(id),
+    requested_by        UUID        NOT NULL REFERENCES identity.users(id),
+    status              VARCHAR(20) NOT NULL DEFAULT 'queued'
+                                    CHECK (status IN ('queued','processing','completed','failed')),
+    file_key            VARCHAR(1024),
+    file_name           VARCHAR(255),
+    error_message       TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at        TIMESTAMPTZ
+);
+
+CREATE TABLE export.batch_export_jobs (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    exam_id         UUID        NOT NULL REFERENCES exam.exams(id),
+    requested_by    UUID        NOT NULL REFERENCES identity.users(id),
+    status          VARCHAR(20) NOT NULL DEFAULT 'queued'
+                                CHECK (status IN ('queued','processing','completed','failed')),
+    total_count     INT         NOT NULL DEFAULT 0,
+    completed_count INT         NOT NULL DEFAULT 0,
+    file_key        VARCHAR(1024),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at    TIMESTAMPTZ
+);
+```
+
+### 4.8 Schema: analytics
+
+```sql
+CREATE SCHEMA analytics;
+
+CREATE TABLE analytics.exam_analytics (
+    id                  UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    exam_id             UUID            NOT NULL REFERENCES exam.exams(id),
+    student_count       INT             NOT NULL DEFAULT 0,
+    average_score       NUMERIC(6,2),
+    median_score        NUMERIC(6,2),
+    std_deviation       NUMERIC(6,2),
+    min_score           NUMERIC(6,2),
+    max_score           NUMERIC(6,2),
+    pass_rate           NUMERIC(5,2),   -- % scoring ≥ 60
+    passing_threshold   NUMERIC(6,2)    NOT NULL DEFAULT 60,
+    distribution_json   JSONB,          -- histogram buckets
+    ai_recommendations  TEXT[],
+    calculated_at       TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE analytics.question_analytics (
+    id                  UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    exam_id             UUID            NOT NULL REFERENCES exam.exams(id),
+    question_id         UUID            NOT NULL REFERENCES exam.questions(id),
+    correct_count       INT             NOT NULL DEFAULT 0,
+    incorrect_count     INT             NOT NULL DEFAULT 0,
+    average_score       NUMERIC(5,2),
+    difficulty_index    NUMERIC(5,4),   -- 0=hardest, 1=easiest
+    common_mistakes     JSONB,          -- [{text, frequency}]
+    calculated_at       TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    UNIQUE (exam_id, question_id)
+);
+```
+
+### 4.9 Schema: audit
+
+```sql
+CREATE SCHEMA audit;
+
+CREATE TABLE audit.audit_logs (
+    id              BIGSERIAL       PRIMARY KEY,
+    user_id         UUID            REFERENCES identity.users(id),
+    action          VARCHAR(100)    NOT NULL,
+    resource_type   VARCHAR(50)     NOT NULL,
+    resource_id     UUID,
+    old_value       JSONB,
+    new_value       JSONB,
+    ip_address      INET,
+    user_agent      TEXT,
+    metadata        JSONB,
+    created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_audit_logs_user_id ON audit.audit_logs(user_id);
+CREATE INDEX idx_audit_logs_resource ON audit.audit_logs(resource_type, resource_id);
+CREATE INDEX idx_audit_logs_created_at ON audit.audit_logs(created_at DESC);
+-- Also indexed in Elasticsearch for full-text search
+```
+
+### 4.10 ERD Summary (Key Relationships)
+
+```
+identity.users
+    ├──< billing.subscriptions
+    ├──< billing.payment_methods
+    ├──< billing.invoices
+    ├──< billing.usage_records
+    ├──< exam.exams
+    ├──< ocr.student_exams (as teacher)
+    ├──< grading.teacher_overrides
+    └──< audit.audit_logs
+
+exam.exams
+    ├──< exam.questions
+    │       └──< exam.rubric_items
+    ├── exam.exam_templates
+    ├── exam.answer_keys
+    ├──< ocr.student_exams
+    └──< grading.grading_runs
+
+ocr.student_exams
+    ├──< ocr.ocr_jobs
+    │       └──< ocr.ocr_pages
+    ├──< ocr.extracted_answers
+    └── grading.student_grades
+
+grading.student_grades
+    ├──< grading.question_grades
+    │       └──< grading.teacher_overrides
+    ├──< grading.teacher_comments
+    └──< export.export_jobs
+
+exam.exams
+    ├── analytics.exam_analytics
+    └──< analytics.question_analytics
+```

@@ -1,0 +1,69 @@
+<div class="register-container" dir="rtl">
+  <h2>הרשמה ל-ExamAI</h2>
+  
+  <form [formGroup].="registerForm" (ngSubmit)="onSubmit()">
+    
+    <div class="form-group">
+      <label>שם פרטי</label>
+      <input type="text" formControlName="firstName" />
+      <div class="error" *ngIf="registerForm.get('firstName')?.touched && registerForm.get('firstName')?.invalid">
+        שם פרטי הוא שדה חובה.
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>שם משפחה</label>
+      <input type="text" formControlName="lastName" />
+      <div class="error" *ngIf="registerForm.get('lastName')?.touched && registerForm.get('lastName')?.invalid">
+        שם משפחה הוא שדה חובה.
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>אימייל</label>
+      <input type="email" formControlName="email" />
+      <div class="error" *ngIf="registerForm.get('email')?.touched && registerForm.get('email')?.invalid">
+        נא להזין כתובת אימייל תקינה.
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>סיסמה</label>
+      <div class="password-wrapper">
+        <input [type]="showPassword ? 'text' : 'password'" formControlName="password" />
+        <button type="button" (click)="togglePasswordVisibility()">
+          {{ showPassword ? 'הסתר' : 'הצג' }}
+        </button>
+      </div>
+      <div class="error" *ngIf="registerForm.get('password')?.touched && registerForm.get('password')?.errors?.['minlength']">
+        הסיסמה חייבת להכיל לפחות 8 תווים.
+      </div>
+      
+      <div class="strength-indicator" *ngIf="registerForm.get('password')?.value">
+        <div class="bar" [attr.data-strength]="passwordStrength"></div>
+        <span>חוזק סיסמה: {{ passwordStrengthText }}</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>אימות סיסמה</label>
+      <input type="password" formControlName="confirmPassword" />
+      <div class="error" *ngIf="registerForm.get('confirmPassword')?.touched && registerForm.hasError('passwordsMismatch')">
+        הסיסמאות שנקלטו אינן תואמות.
+      </div>
+    </div>
+
+    <div class="server-error" *ngIf="serverError$ | async as error">
+      {{ error }}
+    </div>
+
+    <button type="submit" [disabled]="loading$ | async" class="btn-submit">
+      <span *ngIf="!(loading$ | async)">הרשם כעת</span>
+      <span *ngIf="loading$ | async">מבצע רישום...</span>
+    </button>
+  </form>
+
+  <div class="footer-links">
+    <p>כבר יש לך חשבון? <a routerLink="/auth/login">התחבר כאן</a></p>
+  </div>
+</div>

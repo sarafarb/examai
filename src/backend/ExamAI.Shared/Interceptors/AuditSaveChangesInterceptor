@@ -1,0 +1,67 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using System.Text.Json;
+using ExamAI.Shared.Models;
+
+namespace ExamAI.Shared.Interceptors;
+
+public class AuditSaveChangesInterceptor : SaveChangesInterceptor
+{
+    public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+        DbContextEventData eventData, 
+        InterceptionResult<int> result, 
+        CancellationToken cancellationToken = default)
+    {
+        var context = eventData.Context;
+        if (context == null || context.Database.CurrentTransaction != null) 
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
+
+        var auditEntries = CaptureChanges(context);
+        
+        // אם יש שינויים, נכניס אותם לסכמת ה-Audit דרך ה-Context הקיים 
+        // (או נשלח אותם ב-Queue/מנגנון ייעודי, לצורך הפשטות נניח שהטבלה נגישה)
+        if (auditEntries.Any())
+        {
+            // הערה: כדי למנוע לולאה אינסופית, לא נבצע אינטרספט על ה-AuditDbContext עצמו
+            if (context.GetType().Name != "AuditDbContext")
+            {
+                context.AddRange(auditEntries);
+            }
+        }
+
+        return base.SavingChangesAsync(eventData, result, cancellationToken);
+    }
+
+    private List<AuditLog> CaptureChanges(DbContext context)
+    {
+        var entries = new List<AuditLog>();
+        var changedEntities = context.ChangeTracker.Entries()
+            .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
+
+        foreach (var entry in changedEntities)
+        {
+            var changeInfo = new Dictionary<string, object>();
+            foreach (var prop in entry.Properties)
+            {
+                if (entry.State == EntityState.Modified && prop.IsModified)
+                {
+                    changeInfo[prop.Metadata.Name] = new { Old = prop.OriginalValue, New = prop.CurrentValue };
+                }
+                else if (entry.State == EntityState.Added)
+                {
+                    changeInfo[prop.Metadata.Name] = prop.CurrentValue;
+                }
+            }
+
+            entries.Add(new AuditLog
+            {
+                EntityName = entry.Entity.GetType().Name,
+                Action = entry.State.ToString(),
+                Timestamp = DateTime.UtcNow,
+                Changes = JsonSerializer.Serialize(changeInfo),
+                Username = "System_User" // כאן בעתיד נחבר את ה-IUserContext מה-JWT
+            });
+        }
+        return entries;
+    }
+}

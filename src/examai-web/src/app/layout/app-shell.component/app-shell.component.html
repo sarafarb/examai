@@ -1,0 +1,27 @@
+<div class="main-layout" dir="rtl">
+  
+  <app-sidebar [role]="userRole"></app-sidebar>
+
+  <div class="content-container">
+    
+    <app-navbar [userName]="userName" (logout)="handleLogout()"></app-navbar>
+
+    <div class="breadcrumb-container">
+       <app-breadcrumb></app-breadcrumb>
+    </div>
+
+    <main class="page-content">
+      <router-outlet></router-outlet>
+    </main>
+
+    <footer *ngIf="isFreePlan" class="usage-bar">
+      <span class="usage-text">
+        דף זה משתמש ב-<strong>12</strong> מתוך <strong>25</strong> עמודים חינמיים.
+      </span>
+      <button routerLink="/billing" class="upgrade-btn">
+        שדרג תוכנית
+      </button>
+    </footer>
+
+  </div>
+</div>

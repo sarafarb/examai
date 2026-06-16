@@ -1,0 +1,41 @@
+<div class="history-container" dir="rtl">
+  <div class="header-actions">
+    <h1 class="page-title">היסטוריית תשלומים וחשבוניות</h1>
+    <button class="export-btn" (click)="exportToCsv()">📥 ייצוא ל-CSV</button>
+  </div>
+
+  <div class="table-wrapper">
+    <table class="invoices-table">
+      <thead>
+        <tr>
+          <th>תאריך</th>
+          <th>עמודים שנסרקו</th>
+          <th>סכום לתשלום</th>
+          <th>סטטוס</th>
+          <th>פעולות</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let invoice of invoices">
+          <td>{{ invoice.date | date:'dd/MM/yyyy' }}</td>
+          <td>{{ invoice.pages }}</td>
+          <td>₪{{ invoice.amount | number:'1.2-2' }}</td>
+          <td>
+            <span class="status-badge" [ngClass]="invoice.status">
+              {{ invoice.status === 'paid' ? 'שולם' : invoice.status === 'pending' ? 'ממתין' : 'בוטל' }}
+            </span>
+          </td>
+          <td>
+            <button class="download-btn" (click)="downloadPdf(invoice.pdfUrl)">📄 הורד קבלה</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pagination">
+    <button [disabled]="currentPage === 1" (click)="loadInvoices(currentPage - 1)">הקודם</button>
+    <span>עמוד {{ currentPage }}</span>
+    <button [disabled]="invoices.length < pageSize" (click)="loadInvoices(currentPage + 1)">הבא</button>
+  </div>
+</div>

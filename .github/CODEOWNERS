@@ -1,0 +1,6 @@
+# הגדרת בעלי קוד ברירת מחדל לכל הריפו
+* @ExamAI-Core-Devs
+
+# הגדרת אחראים ספציפיים לתשתיות ו-DevOps
+/infra/  @ExamAI-DevOps-Team
+.github/ @ExamAI-DevOps-Team

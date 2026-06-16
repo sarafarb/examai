@@ -1,0 +1,17 @@
+<div class="auth-container" dir="rtl" style="max-width: 500px; margin: 50px auto; text-align: center; font-family: sans-serif;">
+  <div *ngIf="loading">
+    <h3>מבצע אימות חשבון, אנא המתן...</h3>
+  </div>
+
+  <div *ngIf="!loading && success">
+    <h3 style="color: green;">✓ האימייל אומת בהצלחה!</h3>
+    <p>החשבון שלך פעיל כעת ואתה יכול להיכנס למערכת.</p>
+    <button routerLink="/auth/login" style="padding: 10px 20px; background-color: green; color: white; border: none; cursor: pointer;">כניסה</button>
+  </div>
+
+  <div *ngIf="!loading && !success">
+    <h3 style="color: red;">אופס! קישור האימות אינו תקין או פג תוקף.</h3>
+    <p>אנא נסה לשלוח קישור חדש מתוך מסך ההתחברות.</p>
+    <button routerLink="/auth/login" style="padding: 10px 20px; background-color: #6c757d; color: white; border: none; cursor: pointer;">חזרה למסך כניסה</button>
+  </div>
+</div>

@@ -1,0 +1,54 @@
+<div class="billing-container" dir="rtl">
+  <h1 class="page-title">ניהול חיוב ומנוי</h1>
+
+  <section class="card usage-card">
+    <h2>מצב החשבון שלך</h2>
+    <div *ngIf="!usage.isUnlimited" class="progress-section">
+      <p>שומשו <strong>{{ usage.pagesUsedTotal }}</strong> מתוך <strong>{{ usage.pagesLimitFree }}</strong> עמודים חינמיים.</p>
+      <div class="progress-bar-container">
+        <div class="progress-bar" [style.width]="usagePercentage + '%'"></div>
+      </div>
+    </div>
+    <div *ngIf="usage.isUnlimited" class="unlimited-section">
+      <p>סה"כ עמודים שנסרקו החודש: <strong>{{ usage.pagesUsedTotal }}</strong></p>
+      <span class="pro-badge">תוכנית Pro</span>
+    </div>
+  </section>
+
+  <section class="card payment-methods-card">
+    <div class="card-header">
+      <h2>אמצעי תשלום</h2>
+      <button class="add-card-btn" (click)="openAddCardModal()">
+        🔒 הוסף כרטיס (מאובטח ע"י Stripe)
+      </button>
+    </div>
+
+    <ul class="pm-list">
+      <li *ngFor="let pm of paymentMethods" class="pm-item">
+        <div class="pm-details">
+          <span class="pm-brand">{{ pm.brand }}</span>
+          <span class="pm-last4">**** **** **** {{ pm.last4 }}</span>
+          <span class="pm-exp">תוקף: {{ pm.expMonth }}/{{ pm.expYear }}</span>
+          <span *ngIf="pm.isDefault" class="default-badge">ברירת מחדל</span>
+        </div>
+        <div class="pm-actions">
+          <button *ngIf="!pm.isDefault" (click)="setDefaultCard(pm.id)" class="btn-text">קבע כברירת מחדל</button>
+          <button (click)="removeCard(pm.id)" class="btn-text danger">הסר</button>
+        </div>
+      </li>
+    </ul>
+  </section>
+
+  <div class="modal-overlay" *ngIf="isModalOpen">
+    <div class="modal-content">
+      <h3>הוספת אמצעי תשלום חדש</h3>
+      <div id="card-element" class="stripe-card-element"></div>
+      <div class="modal-actions">
+        <button class="btn-cancel" (click)="closeModal()">ביטול</button>
+        <button class="btn-submit" (click)="submitCard()" [disabled]="isProcessing">
+          {{ isProcessing ? 'מעבד...' : 'שמור כרטיס' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

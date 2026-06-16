@@ -1,0 +1,12 @@
+<div class="auth-container" dir="rtl" style="max-width: 500px; margin: 50px auto; text-align: center; font-family: sans-serif;">
+  <h2>אימות כתובת האימייל שלך</h2>
+  <p>שלחנו לך אימייל עם קישור לאימות החשבון. אנא בדוק את תיבת הדואר הנכנס שלך (וגם את תיקיית הספאם).</p>
+
+  <div *ngIf="message" style="margin: 15px 0; font-weight: bold; color: green;">
+    {{ message }}
+  </div>
+
+  <button (click)="resendEmail()" [disabled]="countdown > 0 || isResending" style="padding: 10px 20px; cursor: pointer;">
+    {{ isResending ? 'שולח...' : countdown > 0 ? 'שלח שוב בעוד ' + countdown + ' שניות' : 'שלח אימייל אימות שוב' }}
+  </button>
+</div>

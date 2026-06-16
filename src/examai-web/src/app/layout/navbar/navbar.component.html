@@ -1,0 +1,18 @@
+<header class="app-navbar">
+  <div class="navbar-logo">ExamAI</div>
+
+  <div class="navbar-actions">
+    <app-notification></app-notification>
+    
+    <div class="user-profile">
+      <span class="user-name">שלום, {{ userName }}</span>
+      <div class="user-avatar">
+        {{ userName.charAt(0) }}
+      </div>
+    </div>
+
+    <button class="logout-btn" (click)="onLogout()">
+      יציאה
+    </button>
+  </div>
+</header>

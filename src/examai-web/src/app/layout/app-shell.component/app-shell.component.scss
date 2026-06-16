@@ -1,0 +1,54 @@
+.main-layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  font-family: sans-serif;
+}
+
+.content-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: #f4f6f9;
+  position: relative;
+}
+
+.breadcrumb-container {
+  padding: 15px 30px 0 30px;
+}
+
+.page-content {
+  flex: 1;
+  padding: 15px 30px;
+  overflow-y: auto;
+}
+
+.usage-bar {
+  background-color: #fff3cd;
+  color: #856404;
+  padding: 12px 30px;
+  border-top: 1px solid #ffeeba;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+}
+
+.usage-text strong {
+  font-weight: bold;
+}
+
+.upgrade-btn {
+  background: #856404;
+  color: white;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.upgrade-btn:hover {
+  background: #6c5003;
+}

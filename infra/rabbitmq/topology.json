@@ -1,0 +1,23 @@
+{
+  "exchanges": [
+    { "name": "examai.events", "type": "topic", "durable": true },
+    { "name": "examai.jobs", "type": "direct", "durable": true },
+    { "name": "examai.dlx", "type": "direct", "durable": true }
+  ],
+  "queues": [
+    { "name": "ocr.jobs", "durable": true, "arguments": { "x-message-ttl": 3600000, "x-dead-letter-exchange": "examai.dlx", "x-dead-letter-routing-key": "job.ocr.dlq" } },
+    { "name": "grading.jobs", "durable": true, "arguments": { "x-message-ttl": 3600000, "x-dead-letter-exchange": "examai.dlx", "x-dead-letter-routing-key": "job.grading.dlq" } },
+    { "name": "export.jobs", "durable": true, "arguments": { "x-message-ttl": 3600000 } },
+    { "name": "notification.jobs", "durable": true, "arguments": { "x-message-ttl": 3600000 } },
+    { "name": "ocr.jobs.dlq", "durable": true, "arguments": { "x-message-ttl": 3600000 } },
+    { "name": "grading.jobs.dlq", "durable": true, "arguments": { "x-message-ttl": 3600000 } }
+  ],
+  "bindings": [
+    { "source": "examai.jobs", "queue": "ocr.jobs", "routingKey": "job.ocr" },
+    { "source": "examai.jobs", "queue": "grading.jobs", "routingKey": "job.grading" },
+    { "source": "examai.jobs", "queue": "export.jobs", "routingKey": "job.export" },
+    { "source": "examai.jobs", "queue": "notification.jobs", "routingKey": "job.notification" },
+    { "source": "examai.dlx", "queue": "ocr.jobs.dlq", "routingKey": "job.ocr.dlq" },
+    { "source": "examai.dlx", "queue": "grading.jobs.dlq", "routingKey": "job.grading.dlq" }
+  ]
+}

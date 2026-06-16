@@ -1,0 +1,24 @@
+.breadcrumb-nav {
+  font-family: sans-serif;
+  font-size: 14px;
+  color: #6c757d;
+}
+
+.breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.crumb-text {
+  color: #007bff;
+}
+
+.crumb-text.active-crumb {
+  color: #343a40;
+  font-weight: bold;
+}
+
+.separator {
+  margin: 0 8px;
+  color: #6c757d;
+}

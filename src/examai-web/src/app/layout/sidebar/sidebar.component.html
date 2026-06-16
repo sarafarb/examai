@@ -1,0 +1,29 @@
+<aside class="app-sidebar" [class.collapsed]="isCollapsed">
+  <div class="sidebar-header">
+    <button class="toggle-btn" (click)="isCollapsed = !isCollapsed">
+      {{ isCollapsed ? '☰' : '✕ סגור' }}
+    </button>
+  </div>
+
+  <nav class="sidebar-nav">
+    <ul class="nav-list">
+      <ng-container *ngIf="role === 'Teacher'">
+        <li *ngFor="let item of teacherLinks" class="nav-item">
+          <a [routerLink]="item.path" routerLinkActive="active-link" class="nav-link">
+            <span class="link-icon">{{ item.icon }}</span>
+            <span *ngIf="!isCollapsed" class="link-label">{{ item.label }}</span>
+          </a>
+        </li>
+      </ng-container>
+
+      <ng-container *ngIf="role === 'Admin'">
+        <li *ngFor="let item of adminLinks" class="nav-item">
+          <a [routerLink]="item.path" routerLinkActive="active-link" class="nav-link">
+            <span class="link-icon">{{ item.icon }}</span>
+            <span *ngIf="!isCollapsed" class="link-label">{{ item.label }}</span>
+          </a>
+        </li>
+      </ng-container>
+    </ul>
+  </nav>
+</aside>

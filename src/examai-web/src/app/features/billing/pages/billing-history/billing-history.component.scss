@@ -1,0 +1,25 @@
+.history-container { padding: 20px; font-family: sans-serif; color: #333; }
+.header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.page-title { color: #2c3e50; margin: 0; }
+.export-btn { background: #3182ce; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+
+/* Table Setup */
+.table-wrapper { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); overflow: hidden; border: 1px solid #e2e8f0; }
+.invoices-table { width: 100%; border-collapse: collapse; text-align: right; }
+.invoices-table th { background: #f7fafc; padding: 15px; border-bottom: 2px solid #e2e8f0; color: #4a5568; font-weight: bold; }
+.invoices-table td { padding: 15px; border-bottom: 1px solid #edf2f7; color: #2d3748; }
+
+/* Badges */
+.status-badge { padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; display: inline-block; }
+.status-badge.paid { background: #c6f6d5; color: #22543d; }
+.status-badge.pending { background: #feebc8; color: #7b341e; }
+.status-badge.cancelled { background: #fed7d7; color: #742a2a; }
+
+/* Actions */
+.download-btn { background: none; border: 1px solid #cbd5e0; padding: 6px 12px; border-radius: 4px; cursor: pointer; color: #4a5568; transition: all 0.2s; }
+.download-btn:hover { background: #edf2f7; }
+
+/* Pagination */
+.pagination { display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 20px; }
+.pagination button { background: white; border: 1px solid #cbd5e0; padding: 6px 16px; border-radius: 4px; cursor: pointer; }
+.pagination button:disabled { opacity: 0.5; cursor: not-allowed; }

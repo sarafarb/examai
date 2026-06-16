@@ -1,0 +1,82 @@
+<div class="container mx-auto p-6" dir="rtl">
+  
+  <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+    <div class="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+      <div class="relative w-full sm:w-64">
+        <input 
+          type="text" 
+          [(ngModel)]="searchTerm" 
+          (input)="applyFilters()"
+          placeholder="חפש מבחן לפי שם..." 
+          class="w-full pr-4 pl-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+      </div>
+      
+      <select 
+        [(ngModel)]="statusFilter" 
+        (change)="applyFilters()"
+        class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <option value="">כל הסטטוסים</option>
+        <option value="draft">טיוטה</option>
+        <option value="active">פעיל</option>
+        <option value="grading">בבדיקה</option>
+        <option value="completed">הושלם</option>
+      </select>
+    </div>
+
+    <button 
+      (click)="navigateToCreate()" 
+      class="w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2">
+      <span>+ מבחן חדש</span>
+    </button>
+  </div>
+
+  <div *ngif="isLoading" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div *ngfor="let i of [1,2,3]" class="bg-white p-6 rounded-xl border border-gray-200 animate-pulse">
+      <div class="h-5 bg-gray-200 rounded w-2/3 mb-4"></div>
+      <div class="h-4 bg-gray-200 rounded w-1/2 mb-3"></div>
+      <div class="h-4 bg-gray-200 rounded w-1/3 mb-6"></div>
+      <div class="h-8 bg-gray-200 rounded w-full"></div>
+    </div>
+  </div>
+
+  <div *ngif="!isLoading && filteredExams.length === 0" class="flex flex-col items-center justify-center py-16 bg-white rounded-2xl border border-dashed border-gray-300 shadow-sm text-center">
+    <div class="text-gray-400 text-5xl mb-4">📝</div>
+    <h3 class="text-xl font-bold text-gray-700 mb-2">עדיין אין מבחנים. צור מבחן ראשון!</h3>
+    <p class="text-gray-500 text-sm mb-6 max-w-sm">התחל ביצירת מבחן חדש, העלה קובץ שאלות וה-AI שלנו יבנה עבורך את הכל בשניות.</p>
+    <button (click)="navigateToCreate()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors">
+      צור מבחן כעת
+    </button>
+  </div>
+
+  <div *ngif="!isLoading && filteredExams.length > 0" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div 
+      *ngfor="let exam of filteredExams" 
+      [routerLink]="['/exams', exam.id]"
+      class="group relative bg-white p-6 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between">
+      
+      <div>
+        <div class="flex justify-between items-start gap-2 mb-3">
+          <h4 class="font-bold text-gray-800 group-hover:text-indigo-600 transition-colors line-clamp-2 text-base">
+            {{ exam.title }}
+          </h4>
+          <span [ngClass]="getStatusBadgeClass(exam.status)" class="text-xs px-2.5 py-0.5 rounded-full font-medium border whitespace-nowrap">
+            {{ getStatusLabel(exam.status) }}
+          </span>
+        </div>
+
+        <div class="text-xs text-gray-500 space-y-1.5 mb-4">
+          <div class="flex items-center gap-1.5">📚 <span class="font-medium text-gray-700">{{ exam.subject }}</span> • {{ exam.gradeLevel }}</div>
+          <div class="flex items-center gap-1.5">👥 תלמידים שנבחנו: <span class="font-medium text-gray-700">{{ exam.studentCount }}</span></div>
+          <div class="flex items-center gap-1.5">📅 נוצר ב: {{ exam.createdAt | date:'dd/MM/yyyy' }}</div>
+        </div>
+      </div>
+
+      <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex justify-end gap-2 border-t pt-3 mt-2 bg-white w-full">
+        <button [routerLink]="['/exams', exam.id, 'edit']" class="p-1.5 hover:bg-gray-100 rounded text-gray-600 text-xs font-medium" title="ערוך הגדרות">✏️ עריכה</button>
+        <button [routerLink]="['/exams', exam.id, 'analytics']" class="p-1.5 hover:bg-gray-100 rounded text-indigo-600 text-xs font-medium" title="צפה בניתוח">📊 ניתוח</button>
+        <button (click)="deleteExam(exam.id, $event)" class="p-1.5 hover:bg-red-50 rounded text-red-600 text-xs font-medium" title="מחק מבחן">🗑️ מחק</button>
+      </div>
+    </div>
+  </div>
+
+</div>

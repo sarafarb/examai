@@ -1,0 +1,8 @@
+<nav class="breadcrumb-nav" dir="rtl">
+  <span *ngFor="let crumb of breadcrumbs; let last = last" class="breadcrumb-item">
+    <span [class.active-crumb]="last" class="crumb-text">
+      {{ crumb }}
+    </span>
+    <span *ngIf="!last" class="separator">/</span>
+  </span>
+</nav>

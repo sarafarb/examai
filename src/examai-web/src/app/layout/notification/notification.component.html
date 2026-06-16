@@ -1,0 +1,17 @@
+<div class="notification-container">
+  <button class="bell-button" (click)="toggleDropdown()">
+    🔔
+    <span *ngIf="unreadCount > 0" class="unread-badge">
+      {{ unreadCount }}
+    </span>
+  </button>
+
+  <div *ngIf="isOpen" class="dropdown-menu">
+    <h4 class="dropdown-title">התראות אחרונות</h4>
+    <ul class="notification-list">
+      <li *ngFor="let notif of notifications" class="notification-item">
+        {{ notif }}
+      </li>
+    </ul>
+  </div>
+</div>
